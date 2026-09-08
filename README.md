@@ -1,70 +1,51 @@
-# 키워드 뉴스 → Slack 자동 알림 (완전 무료)
+# 키워드 뉴스 다이제스트 이미지 → Slack (완전 무료, AI 없음)
 
-내가 지정한 키워드(회사명, 산업군 등)로 뉴스를 검색해서, 매일 정해진 시간에
-최신순 상위 10개를 Slack 채널에 제목+링크로 보내주는 봇입니다.
+기존 "제목+링크만" 텍스트 버전을 확장해서, 각 기사의 대표 이미지(og:image)를
+가져와 하나의 카드 이미지로 합성한 뒤 Slack에 전송합니다.
 
-**이 구성은 AI API를 전혀 쓰지 않아서 100% 무료로 운영됩니다.**
-- 뉴스 소스: Google News RSS (키 발급 불필요)
-- Slack 전송: Incoming Webhook (무료)
-- 매일 자동 실행: GitHub Actions 스케줄러 (무료 티어로 충분)
+**AI API를 전혀 쓰지 않습니다.** 요약도 하지 않고, 뉴스 사이트가 이미
+공유용으로 심어둔 대표 이미지를 그대로 가져와 배치하는 방식입니다.
 
-## 1. Slack Incoming Webhook 만들기
+## ⚠️ 필수 조건: 저장소가 Public이어야 합니다
 
-이전 챗봇처럼 복잡한 봇 설정이 필요 없습니다. 훨씬 간단해요.
+완성된 이미지를 `raw.githubusercontent.com` 주소로 Slack에 전달하는 방식인데,
+이 주소는 **Public 저장소만 인증 없이 접근 가능**합니다. 지금 저장소가
+Private라면 저장소 **Settings → 맨 아래 Danger Zone → Change visibility →
+Make public**으로 바꿔주세요.
 
-1. https://api.slack.com/apps → **Create New App** → **From scratch** (기존 앱이 있으면 그거 써도 됨)
-2. 왼쪽 메뉴 **Incoming Webhooks** → 켜기(Enable)
-3. 아래로 스크롤 → **Add New Webhook to Workspace** 클릭
-4. 알림을 받을 채널 선택 → 허용
-5. `https://hooks.slack.com/services/...` 형태의 URL이 생성됨 → 복사해두기
+(만약 Public으로 바꾸기 꺼려지신다면, 대신 Slack Bot Token 방식으로 파일을
+직접 업로드하는 방법도 있습니다 — 이 경우 처음 만든 챗봇처럼 Bot Token 설정이
+추가로 필요해집니다. 필요하면 그 버전도 만들어드릴게요.)
 
-## 2. GitHub 저장소에 이 코드 올리기
+## 설치 방법 (기존 뉴스봇 저장소에 파일만 추가하는 경우)
 
-1. GitHub에서 새 저장소 생성 (Public이어도 무방, Private이어도 무료 티어로 충분)
-2. 이 폴더 안의 파일들을 그대로 업로드/푸시
+기존 `slack-news-bot` 저장소를 이미 만드셨다면, 이 폴더의 파일들을 그 저장소에
+그대로 복사해 넣고 커밋/푸시만 하면 됩니다. 기존 `fetch_and_post_news.py`와
+이 워크플로우는 서로 독립적으로 동작하니, 텍스트 버전과 이미지 버전을
+둘 다 유지해도 되고, 이미지 버전만 남기고 기존 워크플로우 파일
+(`daily_news.yml`)을 삭제해도 됩니다.
 
-```bash
-git init
-git add .
-git commit -m "키워드 뉴스 슬랙봇"
-git branch -M main
-git remote add origin <내-저장소-URL>
-git push -u origin main
-```
+## 필요한 Secrets
 
-## 3. 저장소에 비밀값(Secrets) 등록
+기존 `SLACK_WEBHOOK_URL`, `NEWS_KEYWORDS`를 그대로 사용합니다. 추가로
+등록할 값은 없습니다.
 
-저장소 페이지에서 **Settings → Secrets and variables → Actions → New repository secret**
+## 동작 원리
 
-| Name | 값 예시 |
-|---|---|
-| `SLACK_WEBHOOK_URL` | 1번에서 복사한 `https://hooks.slack.com/services/...` |
-| `NEWS_KEYWORDS` | `삼성전자,반도체` (쉼표로 여러 키워드 구분 가능) |
+1. 키워드로 구글 뉴스 상위 10개 검색 (기존과 동일)
+2. 각 기사 페이지에 들어가서 `<meta property="og:image">` 태그 값을 추출
+   (이미지를 못 찾은 기사는 회색 박스로 대체)
+3. 이미지들을 다운로드해서 정사각형으로 자른 뒤, Pillow로 제목과 함께
+   카드 하나로 합성 (`digest/latest.png`)
+4. 완성된 이미지를 저장소에 커밋/푸시
+5. `https://raw.githubusercontent.com/.../digest/latest.png?t=시각` 주소를
+   Slack에 전송 → Slack이 자동으로 이미지를 펼쳐서 보여줌
 
-## 4. 실행 시간 조정 (선택)
+## 참고 및 한계
 
-`.github/workflows/daily_news.yml` 안의 이 줄에서 시간을 바꿀 수 있습니다.
-
-```yaml
-- cron: "0 23 * * *"   # UTC 기준. 한국시간(KST) = UTC + 9시간
-```
-
-예: 매일 아침 8시(KST)에 받고 싶다면 → UTC 23:00 → `"0 23 * * *"` (이미 기본값이 이렇게 되어 있음)
-예: 매일 저녁 6시(KST)에 받고 싶다면 → UTC 09:00 → `"0 9 * * *"`
-
-> GitHub Actions 스케줄은 트래픽이 몰리면 몇 분 정도 늦게 실행될 수 있습니다 (정각 보장은 아님).
-
-## 5. 테스트
-
-GitHub 저장소 → **Actions** 탭 → **Daily Keyword News to Slack** 워크플로우 선택 →
-**Run workflow** 버튼으로 즉시 한 번 실행해서 Slack에 메시지가 오는지 확인하세요.
-
-이후로는 매일 지정한 시간에 자동으로 실행됩니다. 내 컴퓨터를 켜둘 필요도 없습니다
-(GitHub 서버에서 대신 실행해주기 때문).
-
-## 나중에 확장하고 싶다면
-
-- **한 줄 요약 추가**: 지금은 제목+링크만 보내지만, 나중에 마음이 바뀌면 Claude API를
-  한 줄 추가해서 각 기사를 한 줄 요약하게 만들 수 있습니다 (이때부터는 소량의 API 비용 발생).
-- **키워드별로 채널 분리**: Webhook을 채널별로 여러 개 만들어서 키워드마다 다른 채널로 보낼 수 있습니다.
-- **부정 키워드 필터링**: 특정 단어가 포함된 기사는 제외하는 로직을 추가할 수 있습니다.
+- 일부 언론사는 `og:image`가 없거나, 봇 접근을 차단해서 이미지를 못 가져올
+  수 있습니다 (이 경우 회색 박스로 표시됩니다. 정상 동작입니다).
+- 기사 10건의 페이지를 매번 새로 방문해야 해서, 텍스트 버전보다 실행
+  시간이 조금 더 걸립니다 (보통 10~30초 내외).
+- Slack이 같은 파일 이름(`latest.png`)의 미리보기를 캐시하지 않도록
+  주소 끝에 매번 다른 시각값(`?t=...`)을 붙이고 있습니다.
