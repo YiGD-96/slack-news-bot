@@ -1,27 +1,43 @@
-name: Daily Keyword News to Slack
+name: Daily News Digest Image to Slack
 
 on:
   schedule:
-    # UTC 23:00 = 한국시간(KST) 다음날 08:00
-    # 시간을 바꾸고 싶으면 이 cron 표현식만 수정하면 됩니다 (KST = UTC + 9시간)
-    - cron: "0 23 * * *"
-  workflow_dispatch: {}  # Actions 탭에서 수동으로 즉시 실행도 가능
+    - cron: "0 23 * * *"  # UTC 23:00 = 한국시간(KST) 08:00
+  workflow_dispatch: {}
+
+permissions:
+  contents: write  # 생성된 이미지를 저장소에 다시 커밋하기 위해 필요
 
 jobs:
-  send-news:
+  send-digest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
+      - name: 한글 폰트 설치
+        run: sudo apt-get update && sudo apt-get install -y fonts-nanum
 
       - name: 패키지 설치
         run: pip install -r requirements.txt
 
-      - name: 뉴스 가져와서 Slack 전송
+      - name: 뉴스 다이제스트 이미지 생성
         env:
           NEWS_KEYWORDS: ${{ secrets.NEWS_KEYWORDS }}
+        run: python build_digest.py
+
+      - name: 생성된 이미지 커밋 및 푸시
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add digest/latest.png
+          git diff --cached --quiet || git commit -m "chore: 오늘의 뉴스 다이제스트 이미지 업데이트"
+          git push
+
+      - name: Slack으로 이미지 링크 전송
+        env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: python fetch_and_post_news.py
+        run: python post_digest_to_slack.py
