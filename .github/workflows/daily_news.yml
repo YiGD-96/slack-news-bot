@@ -1,0 +1,27 @@
+name: Daily Keyword News to Slack
+
+on:
+  schedule:
+    # UTC 23:00 = 한국시간(KST) 다음날 08:00
+    # 시간을 바꾸고 싶으면 이 cron 표현식만 수정하면 됩니다 (KST = UTC + 9시간)
+    - cron: "0 23 * * *"
+  workflow_dispatch: {}  # Actions 탭에서 수동으로 즉시 실행도 가능
+
+jobs:
+  send-news:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: 뉴스 가져와서 Slack 전송
+        env:
+          NEWS_KEYWORDS: ${{ secrets.NEWS_KEYWORDS }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python fetch_and_post_news.py
